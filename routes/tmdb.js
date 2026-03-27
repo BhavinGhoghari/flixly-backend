@@ -1,16 +1,10 @@
 const express = require("express");
-const router = express.Router();
-const axios = require("axios");
+const router = require("express").Router();
+const Movie = require("../models/Movie");
 const { adminAuth } = require("../middleware/auth");
+const { tmdbGet, importMovieFromTMDB } = require("../utils/movieUtils");
 
-const TMDB_BASE = process.env.TMDB_BASE_URL || "https://api.themoviedb.org/3";
-const TMDB_KEY = process.env.TMDB_API_KEY;
 const IMG = "https://image.tmdb.org/t/p";
-
-const tmdbGet = (path, params = {}) =>
-  axios.get(`${TMDB_BASE}${path}`, {
-    params: { api_key: TMDB_KEY, ...params },
-  });
 
 // ─── LANGUAGE MAP ──────────────────────────────────────────────────────────────
 const LANG_MAP = {
@@ -244,14 +238,13 @@ router.get("/movie/:id", async (req, res) => {
   try {
     let { id } = req.params;
 
-    // Resolve ObjectId to TMDB ID if needed
-    if (id.match(/^[0-9a-fA-F]{24}$/)) {
-      const Movie = require("../models/Movie");
-      const movie = await Movie.findById(id);
-      if (movie && movie.imdbId && movie.imdbId.startsWith("tmdb_movie_")) {
-        id = movie.imdbId.replace("tmdb_movie_", "");
-      }
-    }
+    // Find local movie to get local ratings
+    const localMovie = await Movie.findOne({
+      $or: [
+        { imdbId: `tmdb_movie_${id}` },
+        { imdbId: id }
+      ]
+    });
 
     const [detailRes, creditsRes, videosRes, providers] = await Promise.all([
       tmdbGet(`/movie/${id}`, {
@@ -330,6 +323,8 @@ router.get("/movie/:id", async (req, res) => {
       keywords: d.keywords?.keywords?.map((k) => k.name) || [],
       imdbId: d.imdb_id || "",
       watchProviders: providers,
+      averageUserRating: localMovie?.averageUserRating || 0,
+      totalReviews: localMovie?.totalReviews || 0,
     });
   } catch (e) {
     res.status(500).json({ message: e.message });
@@ -339,16 +334,13 @@ router.get("/movie/:id", async (req, res) => {
 // ─── SERIES DETAIL (rich) ─────────────────────────────────────────────────────
 router.get("/series/:id", async (req, res) => {
   try {
-    let { id } = req.params;
-
-    // Resolve ObjectId to TMDB ID if needed
-    if (id.match(/^[0-9a-fA-F]{24}$/)) {
-      const Movie = require("../models/Movie");
-      const movie = await Movie.findById(id);
-      if (movie && movie.imdbId && movie.imdbId.startsWith("tmdb_series_")) {
-        id = movie.imdbId.replace("tmdb_series_", "");
-      }
-    }
+    // Find local movie to get local ratings
+    const localMovie = await Movie.findOne({
+      $or: [
+        { imdbId: `tmdb_series_${id}` },
+        { imdbId: id }
+      ]
+    });
 
     const [detailRes, creditsRes, videosRes, providers] = await Promise.all([
       tmdbGet(`/tv/${id}`, { append_to_response: "keywords,content_ratings" }),
@@ -419,6 +411,8 @@ router.get("/series/:id", async (req, res) => {
       totalSeasons: d.number_of_seasons || 1,
       totalEpisodes: d.number_of_episodes || null,
       watchProviders: providers,
+      averageUserRating: localMovie?.averageUserRating || 0,
+      totalReviews: localMovie?.totalReviews || 0,
     });
   } catch (e) {
     res.status(500).json({ message: e.message });
@@ -607,62 +601,8 @@ router.get("/trending", async (req, res) => {
 // ─── ADMIN: IMPORT ────────────────────────────────────────────────────────────
 router.post("/import", adminAuth, async (req, res) => {
   try {
-    const Movie = require("../models/Movie");
     const { tmdbId, mediaType } = req.body;
-    const imdbId = `tmdb_${mediaType}_${tmdbId}`;
-    const existing = await Movie.findOne({ imdbId });
-    if (existing)
-      return res
-        .status(409)
-        .json({ message: "Already imported", movie: existing });
-    const isMovie = mediaType === "movie";
-    const [detailRes, creditsRes, videosRes] = await Promise.all([
-      tmdbGet(`/${isMovie ? "movie" : "tv"}/${tmdbId}`),
-      tmdbGet(`/${isMovie ? "movie" : "tv"}/${tmdbId}/credits`),
-      tmdbGet(`/${isMovie ? "movie" : "tv"}/${tmdbId}/videos`),
-    ]);
-    const d = detailRes.data;
-    const trailer = (videosRes.data.results || []).find(
-      (v) => v.type === "Trailer" && v.site === "YouTube",
-    );
-    const movieData = {
-      title: isMovie ? d.title : d.name,
-      type: isMovie ? "movie" : "series",
-      description: d.overview,
-      genre: d.genres?.map((g) => g.name) || [],
-      releaseYear:
-        parseInt((d.release_date || d.first_air_date || "0").split("-")[0]) ||
-        null,
-      duration: isMovie
-        ? d.runtime
-          ? `${Math.floor(d.runtime / 60)}h ${d.runtime % 60}m`
-          : ""
-        : `S1${(d.number_of_seasons || 1) > 1 ? `–S${d.number_of_seasons}` : ""}`,
-      rating: d.vote_average ? Math.round(d.vote_average * 10) / 10 : 0,
-      director: isMovie
-        ? creditsRes.data.crew?.find((c) => c.job === "Director")?.name || ""
-        : d.created_by?.[0]?.name || "",
-      language: (d.original_language || "en").toUpperCase(),
-      country: isMovie
-        ? d.production_countries?.[0]?.name || ""
-        : d.origin_country?.[0] || "",
-      ageRating: d.adult ? "R" : isMovie ? "PG-13" : "TV-14",
-      trailerUrl: trailer
-        ? `https://www.youtube.com/watch?v=${trailer.key}`
-        : "",
-      posterUrl: d.poster_path ? `${IMG}/w500${d.poster_path}` : "",
-      backdropUrl: d.backdrop_path ? `${IMG}/original${d.backdrop_path}` : "",
-      cast:
-        creditsRes.data.cast
-          ?.slice(0, 10)
-          .map((c) => ({ name: c.name, role: c.character })) || [],
-      totalSeasons: isMovie ? undefined : d.number_of_seasons,
-      totalEpisodes: isMovie ? undefined : d.number_of_episodes,
-      imdbId,
-      status: "active",
-    };
-    const movie = new Movie(movieData);
-    await movie.save();
+    const movie = await importMovieFromTMDB(tmdbId, mediaType);
     res.status(201).json({ message: "Imported successfully", movie });
   } catch (e) {
     res.status(500).json({ message: e.message });

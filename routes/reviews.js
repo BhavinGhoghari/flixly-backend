@@ -3,6 +3,7 @@ const router = express.Router();
 const Review = require('../models/Review');
 const Movie = require('../models/Movie');
 const { auth, adminAuth } = require('../middleware/auth');
+const { importMovieFromTMDB } = require('../utils/movieUtils');
 
 // Get reviews for a movie
 router.get('/movie/:movieId', async (req, res) => {
@@ -39,15 +40,26 @@ router.post('/', auth, async (req, res) => {
 
     // Resolve TMDB ID to internal ObjectId if needed
     if (!movieId.match(/^[0-9a-fA-F]{24}$/)) {
-      const movie = await Movie.findOne({
+      let movie = await Movie.findOne({
         $or: [
           { imdbId: movieId },
           { imdbId: `tmdb_movie_${movieId}` },
           { imdbId: `tmdb_series_${movieId}` }
         ]
       });
+
       if (!movie) {
-        return res.status(400).json({ message: 'This title must be imported before you can review it.' });
+        // Auto-import if it's a TMDB ID
+        const match = movieId.match(/^tmdb_(movie|series)_(\d+)$/);
+        if (match) {
+          try {
+            movie = await importMovieFromTMDB(match[2], match[1]);
+          } catch (err) {
+            return res.status(400).json({ message: 'Failed to auto-import title for review. ' + err.message });
+          }
+        } else {
+          return res.status(400).json({ message: 'This title must be imported before you can review it.' });
+        }
       }
       movieId = movie._id;
     }
