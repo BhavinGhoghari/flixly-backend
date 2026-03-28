@@ -268,6 +268,11 @@ router.get("/movie/:id", async (req, res) => {
       ]
     });
 
+    const cacheKey = `movie_detail_${id}`;
+    if (tmdbCache.has(cacheKey)) {
+      return res.json(tmdbCache.get(cacheKey));
+    }
+
     const [detailRes, creditsRes, videosRes, providers] = await Promise.all([
       tmdbGet(`/movie/${id}`, {
         append_to_response: "keywords,release_dates,alternative_titles",
@@ -301,7 +306,7 @@ router.get("/movie/:id", async (req, res) => {
       .slice(0, 3);
     const allCast = (creditsRes.data.cast || []).map(buildCastItem);
 
-    res.json({
+    const result = {
       tmdbId: d.id,
       title: d.title,
       originalTitle: d.original_title !== d.title ? d.original_title : "",
@@ -347,7 +352,9 @@ router.get("/movie/:id", async (req, res) => {
       watchProviders: providers,
       averageUserRating: localMovie?.averageUserRating || 0,
       totalReviews: localMovie?.totalReviews || 0,
-    });
+    };
+    tmdbCache.set(cacheKey, result);
+    res.json(result);
   } catch (e) {
     res.status(500).json({ message: e.message });
   }
@@ -363,6 +370,11 @@ router.get("/series/:id", async (req, res) => {
         { imdbId: id }
       ]
     });
+
+    const cacheKey = `series_detail_${id}`;
+    if (tmdbCache.has(cacheKey)) {
+      return res.json(tmdbCache.get(cacheKey));
+    }
 
     const [detailRes, creditsRes, videosRes, providers] = await Promise.all([
       tmdbGet(`/tv/${id}`, { append_to_response: "keywords,content_ratings" }),
@@ -385,7 +397,7 @@ router.get("/series/:id", async (req, res) => {
       .filter(Boolean);
     const allCast = (creditsRes.data.cast || []).map(buildCastItem);
 
-    res.json({
+    const result = {
       tmdbId: d.id,
       title: d.name,
       originalTitle: d.original_name !== d.name ? d.original_name : "",
@@ -435,7 +447,9 @@ router.get("/series/:id", async (req, res) => {
       watchProviders: providers,
       averageUserRating: localMovie?.averageUserRating || 0,
       totalReviews: localMovie?.totalReviews || 0,
-    });
+    };
+    tmdbCache.set(cacheKey, result);
+    res.json(result);
   } catch (e) {
     res.status(500).json({ message: e.message });
   }
@@ -546,7 +560,10 @@ router.get("/actor/:id", async (req, res) => {
 // ─── GENRES ───────────────────────────────────────────────────────────────────
 router.get("/genres/movie", async (req, res) => {
   try {
+    const cacheKey = "genres_movie";
+    if (tmdbCache.has(cacheKey)) return res.json(tmdbCache.get(cacheKey));
     const { data } = await tmdbGet("/genre/movie/list");
+    tmdbCache.set(cacheKey, data.genres);
     res.json(data.genres);
   } catch (e) {
     res.status(500).json({ message: e.message });
@@ -554,7 +571,10 @@ router.get("/genres/movie", async (req, res) => {
 });
 router.get("/genres/tv", async (req, res) => {
   try {
+    const cacheKey = "genres_tv";
+    if (tmdbCache.has(cacheKey)) return res.json(tmdbCache.get(cacheKey));
     const { data } = await tmdbGet("/genre/tv/list");
+    tmdbCache.set(cacheKey, data.genres);
     res.json(data.genres);
   } catch (e) {
     res.status(500).json({ message: e.message });
@@ -565,11 +585,17 @@ router.get("/genres/tv", async (req, res) => {
 router.get("/discover/movie", async (req, res) => {
   try {
     const { genre, page = 1, sort = "popularity.desc", year } = req.query;
+    const cacheKey = `discover_movie_${genre || 'all'}_${page}_${sort}_${year || 'all'}`;
+    if (tmdbCache.has(cacheKey)) {
+      return res.json(tmdbCache.get(cacheKey));
+    }
     const params = { sort_by: sort, page };
     if (genre) params.with_genres = genre;
     if (year) params.primary_release_year = year;
     const { data } = await tmdbGet("/discover/movie", params);
-    res.json(normalizeTMDBList(data, "movie"));
+    const result = normalizeTMDBList(data, "movie");
+    tmdbCache.set(cacheKey, result);
+    res.json(result);
   } catch (e) {
     res.status(500).json({ message: e.message });
   }
@@ -577,11 +603,17 @@ router.get("/discover/movie", async (req, res) => {
 router.get("/discover/tv", async (req, res) => {
   try {
     const { genre, page = 1, sort = "popularity.desc", year } = req.query;
+    const cacheKey = `discover_tv_${genre || 'all'}_${page}_${sort}_${year || 'all'}`;
+    if (tmdbCache.has(cacheKey)) {
+      return res.json(tmdbCache.get(cacheKey));
+    }
     const params = { sort_by: sort, page };
     if (genre) params.with_genres = genre;
     if (year) params.first_air_date_year = year;
     const { data } = await tmdbGet("/discover/tv", params);
-    res.json(normalizeTMDBList(data, "series"));
+    const result = normalizeTMDBList(data, "series");
+    tmdbCache.set(cacheKey, result);
+    res.json(result);
   } catch (e) {
     res.status(500).json({ message: e.message });
   }

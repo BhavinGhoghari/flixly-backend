@@ -8,6 +8,7 @@ const IMG = "https://image.tmdb.org/t/p";
 const tmdbGet = (path, params = {}) =>
   axios.get(`${TMDB_BASE}${path}`, {
     params: { api_key: TMDB_KEY, ...params },
+    timeout: 10000,
   });
 
 /**
