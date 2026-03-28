@@ -3,6 +3,10 @@ const router = require("express").Router();
 const Movie = require("../models/Movie");
 const { adminAuth } = require("../middleware/auth");
 const { tmdbGet, importMovieFromTMDB } = require("../utils/movieUtils");
+const NodeCache = require("node-cache");
+
+// Cache for 1 hour, check expired every 10 mins
+const tmdbCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 
 const IMG = "https://image.tmdb.org/t/p";
 
@@ -135,10 +139,16 @@ async function getWatchProviders(mediaType, id) {
 // ─── MOVIES ───────────────────────────────────────────────────────────────────
 router.get("/movies/popular", async (req, res) => {
   try {
+    const cacheKey = `popular_movies_${req.query.page || 1}`;
+    if (tmdbCache.has(cacheKey)) {
+      return res.json(tmdbCache.get(cacheKey));
+    }
     const { data } = await tmdbGet("/movie/popular", {
       page: req.query.page || 1,
     });
-    res.json(normalizeTMDBList(data, "movie"));
+    const result = normalizeTMDBList(data, "movie");
+    tmdbCache.set(cacheKey, result);
+    res.json(result);
   } catch (e) {
     res.status(500).json({ message: e.message });
   }
@@ -155,10 +165,16 @@ router.get("/movies/top_rated", async (req, res) => {
 });
 router.get("/movies/upcoming", async (req, res) => {
   try {
+    const cacheKey = `upcoming_movies_${req.query.page || 1}`;
+    if (tmdbCache.has(cacheKey)) {
+      return res.json(tmdbCache.get(cacheKey));
+    }
     const { data } = await tmdbGet("/movie/upcoming", {
       page: req.query.page || 1,
     });
-    res.json(normalizeTMDBList(data, "movie"));
+    const result = normalizeTMDBList(data, "movie");
+    tmdbCache.set(cacheKey, result);
+    res.json(result);
   } catch (e) {
     res.status(500).json({ message: e.message });
   }
@@ -177,10 +193,16 @@ router.get("/movies/now_playing", async (req, res) => {
 // ─── SERIES ───────────────────────────────────────────────────────────────────
 router.get("/series/popular", async (req, res) => {
   try {
+    const cacheKey = `popular_series_${req.query.page || 1}`;
+    if (tmdbCache.has(cacheKey)) {
+      return res.json(tmdbCache.get(cacheKey));
+    }
     const { data } = await tmdbGet("/tv/popular", {
       page: req.query.page || 1,
     });
-    res.json(normalizeTMDBList(data, "series"));
+    const result = normalizeTMDBList(data, "series");
+    tmdbCache.set(cacheKey, result);
+    res.json(result);
   } catch (e) {
     res.status(500).json({ message: e.message });
   }
@@ -569,6 +591,10 @@ router.get("/discover/tv", async (req, res) => {
 router.get("/trending", async (req, res) => {
   try {
     const { window = "week" } = req.query;
+    const cacheKey = `trending_${window}`;
+    if (tmdbCache.has(cacheKey)) {
+      return res.json(tmdbCache.get(cacheKey));
+    }
     const { data } = await tmdbGet(`/trending/all/${window}`);
     const results = data.results.map((item) => {
       const isMovie = item.media_type === "movie";
@@ -588,11 +614,13 @@ router.get("/trending", async (req, res) => {
         genre: [],
       };
     });
-    res.json({
+    const result = {
       results,
       total_pages: data.total_pages,
       total_results: data.total_results,
-    });
+    };
+    tmdbCache.set(cacheKey, result);
+    res.json(result);
   } catch (e) {
     res.status(500).json({ message: e.message });
   }
