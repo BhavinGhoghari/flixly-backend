@@ -24,6 +24,8 @@ const movieSchema = new mongoose.Schema({
   tags: [{ type: String }],
   averageUserRating: { type: Number, default: 0 },
   totalReviews: { type: Number, default: 0 },
+  budget: { type: Number, default: 0 },
+  revenue: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now }
 });
 

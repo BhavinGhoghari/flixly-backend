@@ -3,7 +3,6 @@ const router = express.Router();
 const Movie = require('../models/Movie');
 const { adminAuth } = require('../middleware/auth');
 
-// Get all movies/series with filters
 router.get('/', async (req, res) => {
   try {
     const { type, genre, search, featured, page = 1, limit = 20 } = req.query;
@@ -26,7 +25,6 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Get single movie
 router.get('/:id', async (req, res) => {
   try {
     const movie = await Movie.findById(req.params.id);
@@ -37,7 +35,6 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Admin: Create movie
 router.post('/', adminAuth, async (req, res) => {
   try {
     const movie = new Movie(req.body);
@@ -48,7 +45,6 @@ router.post('/', adminAuth, async (req, res) => {
   }
 });
 
-// Admin: Update movie
 router.put('/:id', adminAuth, async (req, res) => {
   try {
     const movie = await Movie.findByIdAndUpdate(req.params.id, req.body, { new: true });
@@ -58,7 +54,6 @@ router.put('/:id', adminAuth, async (req, res) => {
   }
 });
 
-// Admin: Delete movie
 router.delete('/:id', adminAuth, async (req, res) => {
   try {
     await Movie.findByIdAndDelete(req.params.id);

@@ -11,15 +11,9 @@ const tmdbGet = (path, params = {}) =>
     timeout: 10000,
   });
 
-/**
- * Imports a movie or series from TMDB into the local MongoDB database.
- * @param {string|number} tmdbId - The TMDB ID of the title.
- * @param {string} mediaType - 'movie' or 'series'.
- * @returns {Promise<Object>} - The saved movie document.
- */
 async function importMovieFromTMDB(tmdbId, mediaType) {
   const imdbId = `tmdb_${mediaType}_${tmdbId}`;
-  
+
   // Check if already exists
   let movie = await Movie.findOne({ imdbId });
   if (movie) return movie;
@@ -33,7 +27,7 @@ async function importMovieFromTMDB(tmdbId, mediaType) {
 
   const d = detailRes.data;
   const trailer = (videosRes.data.results || []).find(
-    (v) => v.type === "Trailer" && v.site === "YouTube"
+    (v) => v.type === "Trailer" && v.site === "YouTube",
   );
 
   const movieData = {
@@ -58,9 +52,7 @@ async function importMovieFromTMDB(tmdbId, mediaType) {
       ? d.production_countries?.[0]?.name || ""
       : d.origin_country?.[0] || "",
     ageRating: d.adult ? "R" : isMovie ? "PG-13" : "TV-14",
-    trailerUrl: trailer
-      ? `https://www.youtube.com/watch?v=${trailer.key}`
-      : "",
+    trailerUrl: trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : "",
     posterUrl: d.poster_path ? `${IMG}/w500${d.poster_path}` : "",
     backdropUrl: d.backdrop_path ? `${IMG}/original${d.backdrop_path}` : "",
     cast:
@@ -80,5 +72,5 @@ async function importMovieFromTMDB(tmdbId, mediaType) {
 
 module.exports = {
   importMovieFromTMDB,
-  tmdbGet
+  tmdbGet,
 };

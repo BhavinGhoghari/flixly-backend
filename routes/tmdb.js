@@ -10,7 +10,6 @@ const tmdbCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 
 const IMG = "https://image.tmdb.org/t/p";
 
-// ─── LANGUAGE MAP ──────────────────────────────────────────────────────────────
 const LANG_MAP = {
   en: "English",
   hi: "Hindi",
@@ -52,7 +51,6 @@ const LANG_MAP = {
 };
 const langName = (code) => LANG_MAP[code] || (code || "").toUpperCase();
 
-// ─── KNOWN STREAMING PLATFORMS ────────────────────────────────────────────────
 const PLATFORM_LOGOS = {
   Netflix:
     "https://upload.wikimedia.org/wikipedia/commons/thumb/0/08/Netflix_2015_logo.svg/100px-Netflix_2015_logo.svg.png",
@@ -75,7 +73,6 @@ const PLATFORM_LOGOS = {
     "https://upload.wikimedia.org/wikipedia/commons/thumb/0/08/Crunchyroll_Logo.svg/100px-Crunchyroll_Logo.svg.png",
 };
 
-// ─── HELPERS ──────────────────────────────────────────────────────────────────
 function normalizeTMDBList(data, type) {
   return {
     results: (data.results || []).map((item) => ({
@@ -136,7 +133,6 @@ async function getWatchProviders(mediaType, id) {
   }
 }
 
-// ─── MOVIES ───────────────────────────────────────────────────────────────────
 router.get("/movies/popular", async (req, res) => {
   try {
     const cacheKey = `popular_movies_${req.query.page || 1}`;
@@ -190,7 +186,6 @@ router.get("/movies/now_playing", async (req, res) => {
   }
 });
 
-// ─── SERIES ───────────────────────────────────────────────────────────────────
 router.get("/series/popular", async (req, res) => {
   try {
     const cacheKey = `popular_series_${req.query.page || 1}`;
@@ -228,7 +223,6 @@ router.get("/series/on_the_air", async (req, res) => {
   }
 });
 
-// ─── SEARCH ───────────────────────────────────────────────────────────────────
 router.get("/search", async (req, res) => {
   try {
     const { query, page = 1, type = "all" } = req.query;
@@ -255,17 +249,13 @@ router.get("/search", async (req, res) => {
   }
 });
 
-// ─── MOVIE DETAIL (rich) ──────────────────────────────────────────────────────
 router.get("/movie/:id", async (req, res) => {
   try {
     let { id } = req.params;
 
     // Find local movie to get local ratings
     const localMovie = await Movie.findOne({
-      $or: [
-        { imdbId: `tmdb_movie_${id}` },
-        { imdbId: id }
-      ]
+      $or: [{ imdbId: `tmdb_movie_${id}` }, { imdbId: id }],
     });
 
     const cacheKey = `movie_detail_${id}`;
@@ -275,7 +265,7 @@ router.get("/movie/:id", async (req, res) => {
 
     const [detailRes, creditsRes, videosRes, providers] = await Promise.all([
       tmdbGet(`/movie/${id}`, {
-        append_to_response: "keywords,release_dates,alternative_titles",
+        append_to_response: "keywords,release_dates,alternative_titles,recommendations",
       }),
       tmdbGet(`/movie/${id}/credits`),
       tmdbGet(`/movie/${id}/videos`),
@@ -352,6 +342,7 @@ router.get("/movie/:id", async (req, res) => {
       watchProviders: providers,
       averageUserRating: localMovie?.averageUserRating || 0,
       totalReviews: localMovie?.totalReviews || 0,
+      recommendations: normalizeTMDBList(d.recommendations || {}, "movie").results,
     };
     tmdbCache.set(cacheKey, result);
     res.json(result);
@@ -360,15 +351,12 @@ router.get("/movie/:id", async (req, res) => {
   }
 });
 
-// ─── SERIES DETAIL (rich) ─────────────────────────────────────────────────────
 router.get("/series/:id", async (req, res) => {
   try {
+    const { id } = req.params;
     // Find local movie to get local ratings
     const localMovie = await Movie.findOne({
-      $or: [
-        { imdbId: `tmdb_series_${id}` },
-        { imdbId: id }
-      ]
+      $or: [{ imdbId: `tmdb_series_${id}` }, { imdbId: id }],
     });
 
     const cacheKey = `series_detail_${id}`;
@@ -377,9 +365,9 @@ router.get("/series/:id", async (req, res) => {
     }
 
     const [detailRes, creditsRes, videosRes, providers] = await Promise.all([
-      tmdbGet(`/tv/${id}`, { append_to_response: "keywords,content_ratings" }),
-      tmdbGet(`/tv/${id}/credits`),
-      tmdbGet(`/tv/${id}/videos`),
+      tmdbGet(`/tv/${id}`, { append_to_response: "keywords,content_ratings,recommendations" }),
+      tmdbGet(`/tv/${id}/credits`).catch(() => ({ data: { cast: [] } })),
+      tmdbGet(`/tv/${id}/videos`).catch(() => ({ data: { results: [] } })),
       getWatchProviders("tv", id),
     ]);
     const d = detailRes.data;
@@ -446,7 +434,8 @@ router.get("/series/:id", async (req, res) => {
       totalEpisodes: d.number_of_episodes || null,
       watchProviders: providers,
       averageUserRating: localMovie?.averageUserRating || 0,
-      totalReviews: localMovie?.totalReviews || 0,
+      revenue: d.revenue || localMovie?.revenue || 0,
+      recommendations: normalizeTMDBList(d.recommendations || {}, "series").results,
     };
     tmdbCache.set(cacheKey, result);
     res.json(result);
@@ -455,7 +444,6 @@ router.get("/series/:id", async (req, res) => {
   }
 });
 
-// ─── FULL CAST for a title ────────────────────────────────────────────────────
 router.get("/cast/:mediaType/:id", async (req, res) => {
   try {
     const { mediaType, id } = req.params;
@@ -475,7 +463,6 @@ router.get("/cast/:mediaType/:id", async (req, res) => {
   }
 });
 
-// ─── ACTOR DETAIL ─────────────────────────────────────────────────────────────
 router.get("/actor/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -557,7 +544,6 @@ router.get("/actor/:id", async (req, res) => {
   }
 });
 
-// ─── GENRES ───────────────────────────────────────────────────────────────────
 router.get("/genres/movie", async (req, res) => {
   try {
     const cacheKey = "genres_movie";
@@ -581,11 +567,10 @@ router.get("/genres/tv", async (req, res) => {
   }
 });
 
-// ─── DISCOVER ─────────────────────────────────────────────────────────────────
 router.get("/discover/movie", async (req, res) => {
   try {
     const { genre, page = 1, sort = "popularity.desc", year } = req.query;
-    const cacheKey = `discover_movie_${genre || 'all'}_${page}_${sort}_${year || 'all'}`;
+    const cacheKey = `discover_movie_${genre || "all"}_${page}_${sort}_${year || "all"}`;
     if (tmdbCache.has(cacheKey)) {
       return res.json(tmdbCache.get(cacheKey));
     }
@@ -603,7 +588,7 @@ router.get("/discover/movie", async (req, res) => {
 router.get("/discover/tv", async (req, res) => {
   try {
     const { genre, page = 1, sort = "popularity.desc", year } = req.query;
-    const cacheKey = `discover_tv_${genre || 'all'}_${page}_${sort}_${year || 'all'}`;
+    const cacheKey = `discover_tv_${genre || "all"}_${page}_${sort}_${year || "all"}`;
     if (tmdbCache.has(cacheKey)) {
       return res.json(tmdbCache.get(cacheKey));
     }
@@ -619,7 +604,6 @@ router.get("/discover/tv", async (req, res) => {
   }
 });
 
-// ─── TRENDING ─────────────────────────────────────────────────────────────────
 router.get("/trending", async (req, res) => {
   try {
     const { window = "week" } = req.query;
@@ -658,7 +642,6 @@ router.get("/trending", async (req, res) => {
   }
 });
 
-// ─── ADMIN: IMPORT ────────────────────────────────────────────────────────────
 router.post("/import", adminAuth, async (req, res) => {
   try {
     const { tmdbId, mediaType } = req.body;

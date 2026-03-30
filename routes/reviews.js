@@ -33,6 +33,18 @@ router.get('/movie/:movieId', async (req, res) => {
   }
 });
 
+// Get reviews for current user
+router.get('/my', auth, async (req, res) => {
+  try {
+    const reviews = await Review.find({ user: req.user._id })
+      .populate('movie', 'title posterUrl type')
+      .sort({ createdAt: -1 });
+    res.json(reviews);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // Add review
 router.post('/', auth, async (req, res) => {
   try {
